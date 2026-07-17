@@ -1,6 +1,5 @@
 [phases.setup]
 nixPkgs = [
-  "chromium",
   "nss",
   "nspr",
   "atk",
@@ -21,4 +20,7 @@ nixPkgs = [
   "pango",
   "cairo",
   "alsa-lib",
+  "glib",
+  "gtk3",
+  "udev",
 ]
