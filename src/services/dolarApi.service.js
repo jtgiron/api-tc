@@ -1,5 +1,6 @@
 const axios = require('axios');
 const cache = require('../config/cache');
+const { normalizarValoresCotizacion } = require('../utils/cotizaciones');
 
 const BASE_URL = 'https://dolarapi.com/v1';
 
@@ -13,8 +14,9 @@ async function getAllDolar() {
 
   try {
     const { data } = await axios.get(`${BASE_URL}/dolares`);
-    cache.set(cacheKey, data);
-    return data;
+    const cotizaciones = normalizarValoresCotizacion(data);
+    cache.set(cacheKey, cotizaciones);
+    return cotizaciones;
   } catch (err) {
     throw new Error(`Error al obtener todos los tipos de dólar: ${err.message}`);
   }
@@ -30,8 +32,9 @@ async function getDolarByTipo(tipo) {
 
   try {
     const { data } = await axios.get(`${BASE_URL}/dolares/${tipo}`);
-    cache.set(cacheKey, data);
-    return data;
+    const cotizacion = normalizarValoresCotizacion(data);
+    cache.set(cacheKey, cotizacion);
+    return cotizacion;
   } catch (err) {
     throw new Error(`Error al obtener dólar tipo "${tipo}": ${err.message}`);
   }
