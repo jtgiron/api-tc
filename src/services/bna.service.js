@@ -1,5 +1,6 @@
 const puppeteer = require('puppeteer');
 const cache = require('../config/cache');
+const { limitarADosDecimales } = require('../utils/cotizaciones');
 
 const BNA_URL = 'https://www.bna.com.ar/Personas';
 const CACHE_KEY = 'euro:bna';
@@ -12,10 +13,11 @@ function parsePrecio(text) {
   const s = text.trim();
   // Argentine format: comma is decimal separator, dots are thousands separators
   if (s.includes(',')) {
-    return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
+    const parsed = parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
+    return limitarADosDecimales(parsed);
   }
   // US/standard format: dot is decimal separator — parse directly
-  return parseFloat(s) || 0;
+  return limitarADosDecimales(parseFloat(s) || 0);
 }
 
 /**

@@ -1,26 +1,22 @@
 const {
   getAllDolar,
   getDolarByTipo,
-  getEuroOficial,
 } = require('../services/dolarApi.service');
 const { getBnaEuro } = require('../services/bna.service');
 
 /**
  * GET /api/cotizaciones
- * Devuelve dólar (todos los tipos), euro oficial y euro BNA en paralelo.
+ * Devuelve dólar (todos los tipos) y euro BNA en paralelo.
  */
 async function getAllCotizaciones(req, res) {
   try {
-    const [dolarResult, euroOficialResult, euroBnaResult] =
-      await Promise.allSettled([getAllDolar(), getEuroOficial(), getBnaEuro()]);
+    const [dolarResult, euroBnaResult] =
+      await Promise.allSettled([getAllDolar(), getBnaEuro()]);
 
     const dolar =
       dolarResult.status === 'fulfilled' ? dolarResult.value : [];
-    
+
     const euro = [];
-    if (euroOficialResult.status === 'fulfilled') {
-      euro.push(euroOficialResult.value);
-    }
     if (euroBnaResult.status === 'fulfilled') {
       euro.push(...euroBnaResult.value);
     }
@@ -62,22 +58,11 @@ async function getDolarByTipoHandler(req, res) {
 
 /**
  * GET /api/cotizaciones/euro
- * Combina BNA (Puppeteer) + euro oficial de dolarapi en paralelo.
+ * Devuelve cotizaciones de euro desde BNA (Puppeteer).
  */
 async function getEuro(req, res) {
   try {
-    const [bnaResult, oficialResult] = await Promise.allSettled([
-      getBnaEuro(),
-      getEuroOficial(),
-    ]);
-
-    const resultado = [];
-    if (bnaResult.status === 'fulfilled') {
-      resultado.push(...bnaResult.value);
-    }
-    if (oficialResult.status === 'fulfilled') {
-      resultado.push(oficialResult.value);
-    }
+    const resultado = await getBnaEuro();
 
     if (resultado.length === 0) {
       return res
