@@ -37,21 +37,4 @@ async function getDolarByTipo(tipo) {
   }
 }
 
-/**
- * GET /cotizaciones/eur — euro oficial
- */
-async function getEuroOficial() {
-  const cacheKey = 'euro:oficial';
-  const cached = cache.get(cacheKey);
-  if (cached !== undefined) return cached;
-
-  try {
-    const { data } = await axios.get(`${BASE_URL}/cotizaciones/eur`);
-    cache.set(cacheKey, data);
-    return data;
-  } catch (err) {
-    throw new Error(`Error al obtener euro oficial: ${err.message}`);
-  }
-}
-
-module.exports = { getAllDolar, getDolarByTipo, getEuroOficial };
+module.exports = { getAllDolar, getDolarByTipo };
