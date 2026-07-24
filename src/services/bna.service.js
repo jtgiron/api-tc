@@ -8,7 +8,7 @@ const CURRENCIES = {
   USD: {
     cacheKey: 'dolar:bna',
     name: 'Dolar',
-    pattern: 'd[oó]lar(?:\\s+u\\.?s\\.?a\\.?)?',
+    pattern: '^\\s*d[oó]lar\\s+u\\s*\\.?\\s*s\\s*\\.?\\s*a\\s*\\.?\\s*$',
   },
 };
 
@@ -63,14 +63,18 @@ async function scrapeBna() {
        * Busca filas de las monedas solicitadas priorizando
        * #billetes y #divisas, con fallback a cualquier tabla.
        */
-      function extraerFilas(tableSelector, pattern) {
-        const table = document.querySelector(tableSelector);
-        if (!table) return [];
+      function extraerFilasDeTabla(table, pattern) {
         const rows = Array.from(table.querySelectorAll('tr'));
         const matcher = new RegExp(pattern, 'i');
-        return rows.filter((row) =>
-          matcher.test(row.innerText || row.textContent)
-        );
+        return rows.filter((row) => {
+          const moneda = row.querySelectorAll('td')[0];
+          return moneda && matcher.test(moneda.innerText || moneda.textContent);
+        });
+      }
+
+      function extraerFilas(tableSelector, pattern) {
+        const table = document.querySelector(tableSelector);
+        return table ? extraerFilasDeTabla(table, pattern) : [];
       }
 
       function parsearFila(row) {
@@ -106,14 +110,11 @@ async function scrapeBna() {
         filasDivisas.forEach((f) => procesarFila(f, 'divisa', code));
 
         if (filasBilletes.length === 0 && filasDivisas.length === 0) {
-          const matcher = new RegExp(pattern, 'i');
           const tablas = Array.from(
             document.querySelectorAll('table.table, table')
           );
           for (const tabla of tablas) {
-            const filas = Array.from(tabla.querySelectorAll('tr')).filter((r) =>
-              matcher.test(r.innerText || r.textContent)
-            );
+            const filas = extraerFilasDeTabla(tabla, pattern);
             const tableText = `${tabla.id || ''} ${tabla.className || ''}`;
             const tipo = /divisa/i.test(tableText) ? 'divisa' : 'billete';
             filas.forEach((f) => procesarFila(f, tipo, code));
