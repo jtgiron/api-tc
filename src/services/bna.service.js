@@ -3,7 +3,16 @@ const cache = require('../config/cache');
 const { limitarADosDecimales } = require('../utils/cotizaciones');
 
 const BNA_URL = 'https://www.bna.com.ar/Personas';
-const CACHE_KEY = 'euro:bna';
+const CURRENCIES = {
+  EUR: { cacheKey: 'euro:bna', name: 'Euro', pattern: 'euro' },
+  USD: {
+    cacheKey: 'dolar:bna',
+    name: 'Dolar',
+    pattern: 'd[oó]lar(?:\\s+u\\.?s\\.?a\\.?)?',
+  },
+};
+
+let scrapePromise;
 
 /**
  * Parsea un string de precio argentino al formato numérico.
@@ -21,13 +30,9 @@ function parsePrecio(text) {
 }
 
 /**
- * Scraping de cotizaciones de Euro (Billete y Divisa) desde BNA.
- * @returns {Promise<Array>}
+ * Scraping de cotizaciones de BNA en una sola sesión de navegador.
  */
-async function getBnaEuro() {
-  const cached = cache.get(CACHE_KEY);
-  if (cached !== undefined) return cached;
-
+async function scrapeBna() {
   let browser;
   try {
     const launchOptions = {
@@ -53,16 +58,19 @@ async function getBnaEuro() {
       }
     }
 
-    const resultado = await page.evaluate(() => {
+    const resultado = await page.evaluate((currencies) => {
       /**
-       * Busca filas que contengan "Euro" en las tablas priorizando
+       * Busca filas de las monedas solicitadas priorizando
        * #billetes y #divisas, con fallback a cualquier tabla.
        */
-      function extraerFilasEuro(tableSelector) {
+      function extraerFilas(tableSelector, pattern) {
         const table = document.querySelector(tableSelector);
         if (!table) return [];
         const rows = Array.from(table.querySelectorAll('tr'));
-        return rows.filter((row) => /euro/i.test(row.innerText || row.textContent));
+        const matcher = new RegExp(pattern, 'i');
+        return rows.filter((row) =>
+          matcher.test(row.innerText || row.textContent)
+        );
       }
 
       function parsearFila(row) {
@@ -72,12 +80,9 @@ async function getBnaEuro() {
         return celdas;
       }
 
-      const filasBilletes = extraerFilasEuro('#billetes');
-      const filasDivisas = extraerFilasEuro('#divisas');
-
       const items = [];
 
-      const procesarFila = (fila, tipoDefault) => {
+      const procesarFila = (fila, tipoDefault, monedaCodigo) => {
         const celdas = parsearFila(fila);
         // BNA: [Moneda, Compra, Venta] (a veces más columnas)
         if (celdas.length < 3) return;
@@ -90,35 +95,37 @@ async function getBnaEuro() {
         if (/billete/i.test(moneda)) tipo = 'billete';
         else if (/divisa/i.test(moneda)) tipo = 'divisa';
 
-        items.push({ tipo, moneda: 'EUR', compraStr, ventaStr });
+        items.push({ tipo, moneda: monedaCodigo, compraStr, ventaStr });
       };
 
-      if (filasBilletes.length > 0) {
-        filasBilletes.forEach((f) => procesarFila(f, 'billete'));
-      }
-      if (filasDivisas.length > 0) {
-        filasDivisas.forEach((f) => procesarFila(f, 'divisa'));
-      }
+      currencies.forEach(({ code, pattern }) => {
+        const filasBilletes = extraerFilas('#billetes', pattern);
+        const filasDivisas = extraerFilas('#divisas', pattern);
 
-      // Fallback: buscar en cualquier tabla
-      if (items.length === 0) {
-        const tablas = Array.from(
-          document.querySelectorAll('table.table, table')
-        );
-        for (const tabla of tablas) {
-          const filas = Array.from(tabla.querySelectorAll('tr')).filter((r) =>
-            /euro/i.test(r.innerText || r.textContent)
+        filasBilletes.forEach((f) => procesarFila(f, 'billete', code));
+        filasDivisas.forEach((f) => procesarFila(f, 'divisa', code));
+
+        if (filasBilletes.length === 0 && filasDivisas.length === 0) {
+          const matcher = new RegExp(pattern, 'i');
+          const tablas = Array.from(
+            document.querySelectorAll('table.table, table')
           );
-          filas.forEach((f) => procesarFila(f, 'euro'));
-          if (items.length > 0) break;
+          for (const tabla of tablas) {
+            const filas = Array.from(tabla.querySelectorAll('tr')).filter((r) =>
+              matcher.test(r.innerText || r.textContent)
+            );
+            const tableText = `${tabla.id || ''} ${tabla.className || ''}`;
+            const tipo = /divisa/i.test(tableText) ? 'divisa' : 'billete';
+            filas.forEach((f) => procesarFila(f, tipo, code));
+          }
         }
-      }
+      });
 
       return items;
-    });
+    }, Object.entries(CURRENCIES).map(([code, { pattern }]) => ({ code, pattern })));
 
     if (resultado.length === 0) {
-      throw new Error('No se encontraron cotizaciones de Euro en BNA');
+      throw new Error('No se encontraron cotizaciones en BNA');
     }
 
     const fechaActualizacion = new Date().toISOString();
@@ -132,8 +139,10 @@ async function getBnaEuro() {
     }));
 
     const ttl = parseInt(process.env.CACHE_TTL, 10) || 300;
-    cache.set(CACHE_KEY, cotizaciones, ttl);
-    return cotizaciones;
+    Object.entries(CURRENCIES).forEach(([moneda, { cacheKey }]) => {
+      const items = cotizaciones.filter((item) => item.moneda === moneda);
+      if (items.length > 0) cache.set(cacheKey, items, ttl);
+    });
   } catch (err) {
     throw new Error(`Error en scraping BNA: ${err.message}`);
   } finally {
@@ -141,4 +150,33 @@ async function getBnaEuro() {
   }
 }
 
-module.exports = { getBnaEuro };
+async function getBnaCurrency(moneda) {
+  const config = CURRENCIES[moneda];
+  const cached = cache.get(config.cacheKey);
+  if (cached !== undefined) return cached;
+
+  if (!scrapePromise) {
+    scrapePromise = scrapeBna().finally(() => {
+      scrapePromise = undefined;
+    });
+  }
+  await scrapePromise;
+
+  const cotizaciones = cache.get(config.cacheKey);
+  if (cotizaciones === undefined) {
+    throw new Error(
+      `Error en scraping BNA: No se encontraron cotizaciones de ${config.name}`
+    );
+  }
+  return cotizaciones;
+}
+
+function getBnaEuro() {
+  return getBnaCurrency('EUR');
+}
+
+function getBnaDollar() {
+  return getBnaCurrency('USD');
+}
+
+module.exports = { getBnaEuro, getBnaDollar };

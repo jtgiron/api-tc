@@ -1,5 +1,5 @@
 const { getAllDolar } = require('./services/dolarApi.service');
-const { getBnaEuro } = require('./services/bna.service');
+const { getBnaEuro, getBnaDollar } = require('./services/bna.service');
 
 const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -9,10 +9,11 @@ async function refreshAll() {
 
   const results = await Promise.allSettled([
     getAllDolar(),
+    getBnaDollar(),
     getBnaEuro(),
   ]);
 
-  const labels = ['dolar:all', 'euro:bna'];
+  const labels = ['dolar:all', 'dolar:bna', 'euro:bna'];
   results.forEach((r, i) => {
     if (r.status === 'fulfilled') {
       console.log(`[scheduler] ✓ ${labels[i]}`);
